@@ -1,10 +1,6 @@
 extern mod std;
 
-use core::to_bytes::*;
-
 use std::*;
-use io::{ReaderUtil,WriterUtil};
-
 
 enum Result {
   Nil,
@@ -15,31 +11,31 @@ enum Result {
   Status(~str)
 }
 
-priv fn parse_data(len: uint, io: io::Reader) -> Result {
+priv fn parse_data(len: uint, io: @io::Reader) -> Result {
   let res =
     if (len > 0) {
       let bytes = io.read_bytes(len);
-      assert bytes.len() == len;
+      assert!(bytes.len() == len);
       Data(bytes)
     } else {
       Data(~[])
     };
-  assert io.read_byte() == 13;
-  assert io.read_byte() == 10;
+  assert!(io.read_byte() == 13);
+  assert!(io.read_byte() == 10);
   return res;
 }
 
-priv fn read_char(io: io::Reader) -> char {
+priv fn read_char(io: @io::Reader) -> char {
   let ch = io.read_byte();
-  if ch < 0 { fail }
+  if ch < 0 { fail!() }
   ch as char
 }
 
-priv fn parse_list(len: uint, io: io::Reader) -> Result {
+priv fn parse_list(len: uint, io: @io::Reader) -> Result {
   List(vec::from_fn(len, |_| { parse_response(io) }))
 }
 
-priv fn parse_int_line(io: io::Reader) -> int {
+priv fn parse_int_line(io: @io::Reader) -> int {
   let mut i: int = 0;
   let mut digits: uint = 0;
   let mut negative: bool = false;
@@ -52,40 +48,40 @@ priv fn parse_int_line(io: io::Reader) -> int {
         i = (i * 10) + (ch as int - '0' as int);
         },
       '-' => {
-        if negative { fail }
+        if negative { fail!() }
         negative = true
         },
       '\r' => {
-        assert read_char(io) == '\n';
+        assert!(read_char(io) == '\n');
         break
         },
       '\n' => break,
-      _ => fail
+      _ => fail!()
     }
   }
 
-  if digits == 0 { fail }
+  if digits == 0 { fail!() }
 
   if negative { -i }
   else { i }
 }
 
-priv fn parse_n(io: io::Reader, f: fn(uint, io::Reader) -> Result) -> Result {
+priv fn parse_n(io: @io::Reader, f: &fn(uint, @io::Reader) -> Result) -> Result {
   match parse_int_line(io) {
     -1 => Nil,
     len if len >= 0 => f(len as uint, io),
-    _ => fail
+    _ => fail!()
   }
 }
 
-priv fn parse_response(io: io::Reader) -> Result {
+priv fn parse_response(io: @io::Reader) -> Result {
   match read_char(io) {
     '$' => parse_n(io, parse_data),
     '*' => parse_n(io, parse_list),
     '+' => Status(io.read_line()),
     '-' => Error(io.read_line()),
     ':' => Int(parse_int_line(io)),
-    _   => fail
+    _   => fail!()
   }
 }
 
@@ -94,23 +90,23 @@ priv fn cmd_to_str(cmd: ~[~str]) -> ~str {
   str::push_str(&mut res, cmd.len().to_str());
   str::push_str(&mut res, "\r\n"); 
   for cmd.each |s| {
-    str::push_str(&mut res, str::concat(~[~"$", s.len().to_str(), ~"\r\n", *s, ~"\r\n"]));
+    str::push_str(&mut res, fmt!("$%?\r\n%?\r\n", s.len(), s));// &mut res, str::concat(~[~"$", s.len().to_str(), ~"\r\n", *s, ~"\r\n"]));
   }
   res
 }
 
-fn send_query(cmd: ~[~str], sb: net::tcp::TcpSocketBuf) {
+fn send_query(cmd: ~[~str], sb: @net::tcp::TcpSocketBuf) {
   let cmd = cmd_to_str(cmd);
-  sb.write_str(cmd);
+  (sb as @io::Writer).write_str(cmd);
 }
 
-fn recv_query(sb: net::tcp::TcpSocketBuf) -> Result {
-  let res = parse_response(sb as io::Reader);
+fn recv_query(sb: @net::tcp::TcpSocketBuf) -> Result {
+  let res = parse_response(sb as @io::Reader);
   //io::println(fmt!("%?", res));
   res
 }
 
-fn query(cmd: ~[~str], sb: net::tcp::TcpSocketBuf) -> Result {
+fn query(cmd: ~[~str], sb: @net::tcp::TcpSocketBuf) -> Result {
   send_query(cmd, sb);
   recv_query(sb)
 }
@@ -119,9 +115,9 @@ fn main() {
   let server_ip_addr = net::ip::v4::parse_addr("127.0.0.1");
   let server_port = 6379;
   let iotask = uv::global_loop::get();
-  let connect_result = net::tcp::connect(server_ip_addr, server_port, iotask); 
+  let connect_result = net::tcp::connect(server_ip_addr, server_port, &iotask); 
   let sock = result::unwrap(connect_result);
-  let sb = net::tcp::socket_buf(sock);
+  let sb = @net::tcp::socket_buf(sock);
 
   //query(~[~"SET", ~"def", ~"abc"], sb);
 
